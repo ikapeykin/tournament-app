@@ -1,0 +1,1 @@
+SWAGGER_URL_PREFIX = 'schema'
