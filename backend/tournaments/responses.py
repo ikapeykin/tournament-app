@@ -23,3 +23,9 @@ class TournamentTeamDidNotJoin(APIException):
     status_code = 403
     default_detail = 'Team did not joined to the tournament.'
     default_code = 'tournament_unavailable'
+
+
+class TournamentTaskAlreadySubmitted(APIException):
+    status_code = 403
+    default_detail = 'Tournament task already submitted.'
+    default_code = 'tournament_unavailable'

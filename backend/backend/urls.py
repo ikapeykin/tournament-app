@@ -1,16 +1,27 @@
 from django.contrib import admin
 from django.urls import path, include
-from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
+from drf_yasg import openapi
+from drf_yasg.views import get_schema_view
+from rest_framework import permissions
 
-from backend.constants import SWAGGER_URL_PREFIX
+schema_view = get_schema_view(
+    openapi.Info(
+        title="Face App Challenge API",
+        default_version='v1',
+        description="OpenAPI",
+        terms_of_service="https://www.google.com/policies/terms/",
+        contact=openapi.Contact(email="contact@snippets.local"),
+        license=openapi.License(name="BSD License"),
+    ),
+    public=True,
+    permission_classes=(permissions.AllowAny,),
+)
 
 urlpatterns = [
     path('admin/', admin.site.urls),
 
     # Open API documentation
-    path(f'{SWAGGER_URL_PREFIX}/api/', SpectacularAPIView.as_view(), name='schema'),
-    path(f'{SWAGGER_URL_PREFIX}/swagger-ui/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
-    path(f'{SWAGGER_URL_PREFIX}/redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
+    path(r'swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
 
     # API
     path('', include('tasks.urls')),

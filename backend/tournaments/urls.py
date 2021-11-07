@@ -1,34 +1,35 @@
-from rest_framework_extensions.routers import ExtendedSimpleRouter
+from django.conf.urls import url
+from rest_framework import routers
 
 from tournaments.views import (
     TournamentViewSet,
-    TournamentLeaderboardViewSet,
-    TournamentSubmitAnswerViewSet,
-    TournamentJoinCompetitionViewSet,
+    TournamentLeaderboardView,
+    TournamentSubmitAnswerView,
+    TournamentJoinCompetitionView,
+    TournamentUseTaskHintView
 )
 
-router: ExtendedSimpleRouter = ExtendedSimpleRouter()
-tournaments_router = router.register('tournaments', TournamentViewSet, basename='api-tournaments')
+router = routers.DefaultRouter()
+router.register(r"tournaments", TournamentViewSet, basename='api-tournaments')
 
-tournaments_router.register(
-    'leaderboard',
-    TournamentLeaderboardViewSet,
-    basename='api-tournaments-leaderboard',
-    parents_query_lookups=['tournament']
-)
+urlpatterns: [] = [
+    *router.urls,
 
-tournaments_router.register(
-    'join',
-    TournamentJoinCompetitionViewSet,
-    basename='api-tournaments-join',
-    parents_query_lookups=['tournament']
-)
-
-tournaments_router.register(
-    'submit',
-    TournamentSubmitAnswerViewSet,
-    basename='api-tournaments-submit',
-    parents_query_lookups=['tournament']
-)
-
-urlpatterns: [] = router.urls
+    url(
+        r'^tournaments/(?P<tournament_id>\d+)/join',
+        TournamentJoinCompetitionView.as_view(),
+        name='api-tournaments-join'
+    ),
+    url(
+        r'^tournaments/(?P<tournament_id>\d+)/leaderboard',
+        TournamentLeaderboardView.as_view(),
+        name='api-tournaments-leaderboard'),
+    url(
+        r'^tournaments/(?P<tournament_id>\d+)/submit',
+        TournamentSubmitAnswerView.as_view(),
+        name='api-tournaments-submit'),
+    url(
+        r'^tournaments/(?P<tournament_id>\d+)/hint',
+        TournamentUseTaskHintView.as_view(),
+        name='api-tournaments-hint'),
+]

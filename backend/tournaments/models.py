@@ -3,13 +3,14 @@ from django.utils import timezone
 
 from tasks.models import Task
 from teams.models import Team
+from tournaments.constants import PENALTY_WITH_HINT, PENALTY_WITH_INCORRECT_ATTEMPT
 from tournaments.responses import (
     TournamentAlreadyJoined,
     TournamentNotAvailable,
     TournamentTeamDidNotJoin,
-    TournamentTaskNotAvailable
+    TournamentTaskNotAvailable,
+    TournamentTaskAlreadySubmitted
 )
-from tournaments.constants import PENALTY_WITH_HINT, PENALTY_WITH_INCORRECT_ATTEMPT
 
 
 class Tournament(models.Model):
@@ -18,10 +19,7 @@ class Tournament(models.Model):
     start_timestamp = models.DateTimeField(blank=True)
     finish_timestamp = models.DateTimeField(blank=True)
 
-    def __str__(self):
-        return self.name
-    
-    def count_penalty_time(self, hints_used, attempts_made):
+    def count_penalty_time(self, hints_used, attempts_made) -> int:
         """
         Get the penalty time for a team.
         :param hints_used:
@@ -30,7 +28,7 @@ class Tournament(models.Model):
         """
         return timezone.now().timestamp() - self.start_timestamp.timestamp() + \
                (hints_used * PENALTY_WITH_HINT) + (attempts_made * PENALTY_WITH_INCORRECT_ATTEMPT)
-    
+
     def count_task_hint_number(self, team: Team, task: Task) -> int:
         """
         Get the number of hints a team has used for a task.
@@ -38,7 +36,7 @@ class Tournament(models.Model):
         :param task:
         :return:
         """
-        return TournamentAttempt.objects.filter(tournament=self, team=team, task=task).count()
+        return TournamentHint.objects.filter(tournament=self, team=team, task=task).count()
 
     def count_attempts_made(self, team: Team, task: Task) -> int:
         """
@@ -48,7 +46,7 @@ class Tournament(models.Model):
         :return:
         """
         return TournamentAttempt.objects.filter(tournament=self, team=team, task=task).count()
-    
+
     def get_task_hint(self, team: Team, task: Task) -> str:
         """
         Get a hint for a team.
@@ -66,11 +64,11 @@ class Tournament(models.Model):
             raise TournamentTaskNotAvailable
 
         hint = task.get_hint(hint_number=self.count_task_hint_number(team, task))
-        TournamentHint.objects.create(tournament=self, team=team, task=task, used_hint=True)
+        TournamentHint.objects.create(tournament=self, team=team, task=task, hint=hint, used_hint=True)
 
         return hint
 
-    def add_task_result(self, team: Team, task: Task, passed: bool, penalty_time: int):
+    def save_task_result(self, team: Team, task: Task, passed: bool, penalty_time: int):
         """
         Add a task result for a team.
         :param team:
@@ -83,7 +81,7 @@ class Tournament(models.Model):
             TournamentLeaderboard.objects.create(tournament=self, team=team)
 
         team_leaderboard = TournamentLeaderboard.objects.get(tournament=self, team=team)
-        team_leaderboard.add_task_result(task, passed, penalty_time)
+        team_leaderboard.save_task_result(task, passed, penalty_time)
 
     def get_registrations(self):
         """
@@ -139,7 +137,6 @@ class Tournament(models.Model):
         :return:
         """
         # TODO: Здесь закрался баг, нужно еще проверять начался ли турнир
-        # TODO: Проверить сдана ли задача
 
         if not self.is_joined(team):
             raise TournamentTeamDidNotJoin
@@ -156,7 +153,7 @@ class Tournament(models.Model):
             hints_used: int = self.count_task_hint_number(team, task)
             attempts_made: int = self.count_attempts_made(team, task)
             penalty_time: int = self.count_penalty_time(hints_used, attempts_made)
-            self.add_task_result(team=team, task=task, passed=True, penalty_time=penalty_time)
+            self.save_task_result(team=team, task=task, passed=True, penalty_time=penalty_time)
 
         return TournamentAttempt.objects.create(tournament=self, team=team, task=task, success=attempt_success)
 
@@ -171,6 +168,7 @@ class TournamentHint(models.Model):
     tournament = models.ForeignKey(Tournament, on_delete=models.DO_NOTHING)
     team = models.ForeignKey(Team, on_delete=models.DO_NOTHING)
     task = models.ForeignKey(Task, on_delete=models.DO_NOTHING)
+    hint = models.TextField(default='', null=False)
     used_hint = models.BooleanField()
 
 
@@ -186,7 +184,6 @@ class TournamentTaskResult(models.Model):
     task = models.ForeignKey(Task, on_delete=models.DO_NOTHING)
     passed = models.BooleanField(verbose_name="Passed")
     penalty_time = models.IntegerField(verbose_name="Penalty time")
-    score = models.IntegerField(default=0)
 
 
 class TournamentLeaderboard(models.Model):
@@ -196,7 +193,7 @@ class TournamentLeaderboard(models.Model):
     total_penalty_time = models.IntegerField(default=0)
     total_tasks_passed = models.IntegerField(default=0)
 
-    def add_task_result(self, task: Task, passed: bool, penalty_time: int):
+    def save_task_result(self, task: Task, passed: bool, penalty_time: int):
         """
         Add a task result to the leaderboard.
         :param task:
@@ -207,6 +204,10 @@ class TournamentLeaderboard(models.Model):
         if not passed:
             return
 
+        if self.results.filter(task=task).exists():
+            raise TournamentTaskAlreadySubmitted
+
         self.total_penalty_time += penalty_time
         self.total_tasks_passed += 1
         self.results.add(TournamentTaskResult.objects.create(task=task, passed=passed, penalty_time=penalty_time))
+        self.save()

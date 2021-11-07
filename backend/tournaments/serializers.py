@@ -5,7 +5,9 @@ from tournaments.models import (
     Tournament,
     TournamentRegistration,
     TournamentAttempt,
-    TournamentLeaderboard
+    TournamentLeaderboard,
+    TournamentTaskResult,
+    TournamentHint
 )
 
 
@@ -51,7 +53,21 @@ class TournamentSubmitAnswerSerializer(serializers.ModelSerializer):
         }
 
 
+class TournamentUseTaskHintSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TournamentHint
+        fields = ('task', 'hint')
+
+
+class TournamentTeamTaskSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TournamentTaskResult
+        fields = ('task', 'passed', 'penalty_time')
+
+
 class TournamentLeaderboardSerializer(serializers.ModelSerializer):
+    results = TournamentTeamTaskSerializer(read_only=True, many=True)
+
     class Meta:
         model = TournamentLeaderboard
-        fields = ('team', 'total_penalty_time')
+        fields = ('team', 'results', 'total_penalty_time', 'total_tasks_passed')

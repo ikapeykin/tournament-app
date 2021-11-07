@@ -46,7 +46,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
 
-    'drf_spectacular',
+    'drf_yasg',
     'rest_framework',
 
     'teams',
@@ -64,9 +64,6 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-REST_FRAMEWORK = {
-    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
-}
 
 ROOT_URLCONF = 'backend.urls'
 
@@ -124,6 +121,11 @@ AUTH_PASSWORD_VALIDATORS = [
 
 # Custom auth model
 AUTH_USER_MODEL = 'teams.Team'
+
+AUTHENTICATION_BACKENDS = (
+    'django.contrib.auth.backends.ModelBackend',  # this is default
+    'teams.backends.EmailBackend',
+)
 
 # Internationalization
 # https://docs.djangoproject.com/en/3.2/topics/i18n/

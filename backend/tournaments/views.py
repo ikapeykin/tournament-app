@@ -1,10 +1,13 @@
 from django.shortcuts import get_object_or_404
-from rest_framework import mixins, status
-from rest_framework.permissions import IsAuthenticated
+from drf_yasg import openapi
+from drf_yasg.utils import swagger_auto_schema
+from rest_framework import status
+from rest_framework.generics import GenericAPIView, ListAPIView
+from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from rest_framework.response import Response
-from rest_framework.viewsets import GenericViewSet, ModelViewSet
+from rest_framework.viewsets import ModelViewSet
 
-from teams.models import Team
+from tasks.models import Task
 from tournaments.models import Tournament, TournamentLeaderboard
 from tournaments.serializers import (
     TournamentSerializer,
@@ -13,15 +16,30 @@ from tournaments.serializers import (
     TournamentJoinCompetitionSerializer,
     TournamentJoinCompetitionNestedSerializer,
     TournamentSubmitAnswerSerializer,
+    TournamentUseTaskHintSerializer
 )
 
 
 class TournamentViewSet(ModelViewSet):
     serializer_class = TournamentSerializer
     queryset = Tournament.objects.all()
+    permission_classes_by_action = {
+        'create': [IsAdminUser],
+        'retrieve': [IsAdminUser],
+        'update': [IsAdminUser],
+        'list': [IsAuthenticated]
+    }
 
     class Meta:
         model = Tournament
+
+    def get_permissions(self):
+        try:
+            # return permission_classes depending on `action`
+            return [permission() for permission in self.permission_classes_by_action[self.action]]
+        except KeyError:
+            # action is not set return default permission_classes
+            return [permission() for permission in self.permission_classes]
 
     def get_serializer_class(self):
         if self.action in ["retrieve"]:
@@ -30,51 +48,78 @@ class TournamentViewSet(ModelViewSet):
         return super().get_serializer_class()
 
 
-class TournamentJoinCompetitionViewSet(mixins.CreateModelMixin, GenericViewSet):
+class TournamentJoinCompetitionView(GenericAPIView):
     serializer_class = TournamentJoinCompetitionSerializer
     permission_classes = [IsAuthenticated]
-    lookup_url_field = 'parent_lookup_tournament'
+    queryset = Tournament.objects.all()
+    lookup_url_kwarg = 'tournament_id'
 
-    def create(self, request, *args, **kwargs):
-        tournament = get_object_or_404(Tournament, pk=kwargs.get(self.lookup_url_field))
-        team = get_object_or_404(Team, email=request.user)
-
-        tournament.join(team=team)
+    def post(self, request, *args, **kwargs):
+        tournament = self.get_object()
+        tournament.join(team=request.user)
 
         serializer = TournamentJoinCompetitionNestedSerializer(data={
             "tournament": tournament.id,
-            "team": team.id,
+            "team": request.user.id,
         })
-
         serializer.is_valid(raise_exception=True)
-        headers = self.get_success_headers(serializer.data)
 
-        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
-class TournamentSubmitAnswerViewSet(mixins.CreateModelMixin, GenericViewSet):
-    serializer_class = TournamentSubmitAnswerSerializer
-    lookup_url_field = 'parent_lookup_tournament'
+class TournamentSubmitAnswerView(GenericAPIView):
     permission_classes = [IsAuthenticated]
+    serializer_class = TournamentSubmitAnswerSerializer
+    queryset = Tournament.objects.all()
+    lookup_url_kwarg = 'tournament_id'
 
-    def create(self, request, *args, **kwargs):
+    def post(self, request, *args, **kwargs):
+        tournament = self.get_object()
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        tournament = get_object_or_404(Tournament, pk=kwargs.get(self.lookup_url_field))
-        team = get_object_or_404(Team, email=request.user)
         task = serializer.validated_data.get('task')
-
         serializer = self.get_serializer(tournament.submit_answer(
-            team=team,
+            team=request.user,
             task=task,
             answer=serializer.validated_data.get('answer')
         ))
 
-        headers = self.get_success_headers(serializer.data)
-        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
-class TournamentLeaderboardViewSet(mixins.ListModelMixin, GenericViewSet):
+class TournamentUseTaskHintView(GenericAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = TournamentUseTaskHintSerializer
+    queryset = Tournament.objects.all()
+    lookup_url_kwarg = 'tournament_id'
+
+    @swagger_auto_schema(manual_parameters=[
+        openapi.Parameter(
+            'task',
+            in_=openapi.IN_QUERY,
+            description='Task pk that needs to get a hint',
+            type=openapi.TYPE_INTEGER)
+    ])
+    def get(self, request, *args, **kwargs):
+        tournament = self.get_object()
+        task = get_object_or_404(Task, pk=request.query_params.get('task'))
+
+        serializer = self.get_serializer(data={
+            'task': task.id,
+            'hint': tournament.get_task_hint(task=task, team=request.user)
+        })
+        serializer.is_valid(raise_exception=True)
+
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class TournamentLeaderboardView(ListAPIView):
     serializer_class = TournamentLeaderboardSerializer
-    queryset = TournamentLeaderboard.objects.all()
+    ordering_fields = ('total_tasks_passed', 'total_penalty_time')
+    lookup_url_kwarg = 'tournament_id'
+
+    def get_queryset(self):
+        return TournamentLeaderboard.objects.filter(
+            tournament__id=self.kwargs.get(self.lookup_url_kwarg)
+        ).order_by(*self.ordering_fields)

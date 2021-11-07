@@ -1,8 +1,8 @@
-from rest_framework_extensions.routers import ExtendedSimpleRouter
+from rest_framework import routers
 
 from tasks.views import TaskViewSet
 
-router: ExtendedSimpleRouter = ExtendedSimpleRouter()
+router = routers.DefaultRouter()
 tasks_router = router.register('tasks', TaskViewSet, basename='api-tasks')
 
 urlpatterns: [] = router.urls
